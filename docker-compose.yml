@@ -1,0 +1,88 @@
+version: "3.8"
+
+# ============================================================
+# STACK BD — bd.${DOMAIN}
+# ============================================================
+#
+# Exposé publiquement :
+#   bd.${DOMAIN}   → Application web FastAPI (upload + preview)
+#
+# Service interne :
+#   a1111          → AUTOMATIC1111 API REST (port 7860, CPU uniquement)
+#
+# Données persistantes sous /opt/ia/bd/ :
+#   /opt/ia/bd/models/     → modèles Stable Diffusion + ControlNet
+#   /opt/ia/bd/outputs/    → images générées (historique)
+#   /opt/ia/bd/cn-cache/   → modèles preprocesseurs ControlNet (HED, Lineart…)
+#
+# Variables à configurer dans Coolify → Environment Variables :
+#   DOMAIN               : ton domaine (ex: mon-domain.com)
+#   DOCKERHUB_USERNAME   : ton username Docker Hub
+#   OAUTH_CLIENT_ID      : Google Cloud Console → OAuth 2.0 → Client ID
+#   OAUTH_CLIENT_SECRET  : idem → Client Secret
+#   SESSION_SECRET       : openssl rand -hex 32
+#   ALLOWED_EMAIL        : ton adresse Gmail autorisée (ex: prenom@gmail.com)
+#   SD_EXTRA_ARGS        : (optionnel) args supplémentaires pour A1111
+#
+# URI de redirection OAuth à configurer dans Google Cloud Console :
+#   https://bd.${DOMAIN}/auth
+#
+# Avant de déployer :
+#   sudo bash setup-vps.sh
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # AUTOMATIC1111 — moteur img2img + ControlNet
+  # CPU uniquement — générations lentes (10-30 min)
+  # Premier démarrage : télécharge ~5 Go de modèles automatiquement
+  # ----------------------------------------------------------
+  a1111:
+    image: ${DOCKERHUB_USERNAME}/bd-a1111:latest
+    container_name: bd-a1111
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7860:7860"
+    volumes:
+      - /opt/ia/bd/models:/app/stable-diffusion-webui/models
+      - /opt/ia/bd/outputs:/app/stable-diffusion-webui/outputs
+      - /opt/ia/bd/cn-cache:/app/stable-diffusion-webui/extensions/sd-webui-controlnet/annotator/ckpts
+    environment:
+      - SD_EXTRA_ARGS=${SD_EXTRA_ARGS:-}
+    mem_limit: 18g
+    networks:
+      - bd-network
+
+  # ----------------------------------------------------------
+  # WEBAPP — interface upload + prévisualisation côte à côte
+  # Google SSO — accès réservé à ${ALLOWED_EMAIL}
+  # Exposé via Traefik (géré par Coolify) sous bd.${DOMAIN}
+  # ----------------------------------------------------------
+  webapp:
+    image: ${DOCKERHUB_USERNAME}/bd-webapp:latest
+    container_name: bd-webapp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - A1111_URL=http://a1111:7860
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ALLOWED_EMAIL=${ALLOWED_EMAIL}
+      - DOMAIN=${DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bd.rule=Host(`bd.${DOMAIN}`)"
+      - "traefik.http.routers.bd.entrypoints=https"
+      - "traefik.http.routers.bd.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bd.loadbalancer.server.port=8080"
+    depends_on:
+      - a1111
+    networks:
+      - bd-network
+
+networks:
+  bd-network:
+    driver: bridge
