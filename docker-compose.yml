@@ -10,10 +10,11 @@ version: "3.8"
 # Service interne :
 #   a1111               → AUTOMATIC1111 API REST (port 7860, CPU uniquement)
 #
-# Données persistantes sous /opt/ia/bd/ :
-#   /opt/ia/bd/models/     → modèles Stable Diffusion + ControlNet
-#   /opt/ia/bd/outputs/    → images générées (historique)
-#   /opt/ia/bd/cn-cache/   → modèles preprocesseurs ControlNet
+# Volumes persistants sous /opt/ia/bd/ (survivent aux redémarrages) :
+#   models/     → modèles Stable Diffusion + ControlNet (~5 Go, téléchargés 1 fois)
+#   outputs/    → images générées (historique)
+#   cn-cache/   → preprocesseurs ControlNet (HED, Lineart…)
+#   sessions/   → sessions webapp (pas de re-login après redémarrage)
 #
 # Variables à configurer dans Coolify → Environment Variables :
 #   DOMAIN               : monolithoid.com
@@ -65,6 +66,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - /opt/ia/bd/sessions:/data/sessions
     environment:
       - A1111_URL=http://a1111:7860
       - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}

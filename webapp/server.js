@@ -2,6 +2,7 @@
 
 const express  = require('express');
 const session  = require('express-session');
+const FileStore = require('session-file-store')(session);
 const passport = require('passport');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const multer   = require('multer');
@@ -21,9 +22,14 @@ const DOMAIN        = process.env.DOMAIN         || 'localhost';
 const PORT          = 8080;
 const GEN_TIMEOUT   = 60 * 60 * 1000; // 60 min
 
-// ── Session ───────────────────────────────────────────────────────────────────────
+// ── Session (persistée sur disque — survit aux redémarrages) ───────────────
 
 app.use(session({
+  store: new FileStore({
+    path: '/data/sessions',
+    ttl: 7 * 24 * 3600,   // 7 jours
+    retries: 1,
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
