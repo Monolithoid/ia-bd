@@ -4,8 +4,10 @@ Inference microserver — SD 1.5 + ControlNet (CPU)
 POST /generate  { image, prompt, negative_prompt, mode, steps, cfg_scale, denoising_strength }
 GET  /health    → { ready: true }
 """
-import io, base64, logging, os
+import io, base64, logging, os, warnings
 from contextlib import asynccontextmanager
+
+warnings.filterwarnings("ignore", message=".*resume_download.*", category=FutureWarning)
 
 import torch
 from fastapi import FastAPI, HTTPException
