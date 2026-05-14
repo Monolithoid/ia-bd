@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Empêche git de bloquer sur une invite de credentials (fail rapide)
+ENV GIT_TERMINAL_PROMPT=0
+
 # Installe CPU PyTorch en premier (couche indépendante du code A1111)
 # Prend ~5 min au build, puis mise en cache — ne se réexécute pas sauf changement de version
 RUN pip install --no-cache-dir \
@@ -29,8 +32,10 @@ RUN git clone --depth 1 \
 # Pré-clone des sous-dépôts requis par A1111 au commit exact qu'il attend.
 # Sans cela, launch.py les clone au démarrage — ce qui échoue dans un
 # environnement sans accès réseau sortant ("No such device or address").
-# Le script lit les URLs et hashes directement depuis launch_utils.py pour
-# rester synchronisé avec la version d'A1111 clonée ci-dessus.
+# Le script lit URLs et commit hashes directement depuis launch_utils.py
+# pour rester synchronisé avec la version d'A1111 clonée ci-dessus.
+# Chaque repo est checké au commit précis : A1111 trouve HEAD == commit
+# attendu et passe le git_clone() sans aucun appel réseau.
 RUN python3 - <<'PYEOF'
 import subprocess, re, os, sys
 
@@ -42,6 +47,7 @@ commits   = dict(re.findall(r"(\w+)_commit_hash\s*=\s*os\.environ\.get\([^,]+,\s
 
 dirs = {
     'stable_diffusion':    'stable-diffusion-stability-ai',
+    'generative_models':   'generative-models',
     'taming_transformers': 'taming-transformers',
     'k_diffusion':         'k-diffusion',
     'codeformer':          'CodeFormer',
