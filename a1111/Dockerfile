@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Fail fast instead of hanging on credential prompts
+ENV GIT_TERMINAL_PROMPT=0
+
 # Installe CPU PyTorch en premier (couche indépendante du code A1111)
 # Prend ~5 min au build, puis mise en cache — ne se réexécute pas sauf changement de version
 RUN pip install --no-cache-dir \
@@ -26,12 +29,27 @@ RUN git clone --depth 1 \
         https://github.com/Mikubill/sd-webui-controlnet \
         extensions/sd-webui-controlnet
 
-# Pré-clone des dépôts requis par A1111 et pré-installation des dépendances Python
-# au moment du build. Sans cela, launch.py clone ces dépôts au démarrage du
-# conteneur, ce qui échoue si le réseau n'est pas accessible (erreur
-# "No such device or address"). timeout garantit que le build ne reste pas
-# bloqué si le serveur démarre avant la fin du délai.
-RUN timeout 300 python launch.py \
+# Pré-clone des dépôts requis par A1111 au moment du build.
+# Clonage complet (sans --depth) pour que A1111 puisse checkout
+# le commit exact qu'il attend sans accès réseau au runtime.
+# Sans ça, launch.py les clone au démarrage du conteneur, ce qui
+# échoue si le réseau n'est pas disponible ("No such device or address").
+RUN mkdir -p repositories && \
+    git clone https://github.com/Stability-AI/stablediffusion \
+        repositories/stable-diffusion-stability-ai && \
+    git clone https://github.com/Stability-AI/generative-models \
+        repositories/generative-models && \
+    git clone https://github.com/crowsonkb/k-diffusion \
+        repositories/k-diffusion && \
+    git clone https://github.com/salesforce/BLIP \
+        repositories/BLIP && \
+    git clone https://github.com/sczhou/CodeFormer \
+        repositories/CodeFormer
+
+# Pré-installation des dépendances Python via launch.py.
+# Les dépôts étant déjà présents ci-dessus, launch.py n'a plus qu'à
+# installer les paquets pip. Timeout élargi à 20 min en conséquence.
+RUN timeout 1200 python launch.py \
         --skip-torch-cuda-test \
         --use-cpu all \
         --no-half \

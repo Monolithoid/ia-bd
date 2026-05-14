@@ -53,7 +53,7 @@ services:
       - SD_EXTRA_ARGS=${SD_EXTRA_ARGS:-}
     dns:
       - 8.8.8.8
-      - 8.8.4.4
+      - 1.1.1.1
     mem_limit: 18g
     networks:
       - bd-network
