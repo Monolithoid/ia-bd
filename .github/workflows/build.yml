@@ -10,8 +10,6 @@ name: Build & Push — Images BD
 
 on:
   push:
-    branches:
-      - main
     paths:
       - 'inference/**'
       - 'webapp/**'
