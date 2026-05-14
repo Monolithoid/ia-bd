@@ -38,8 +38,6 @@ services:
     image: ${DOCKERHUB_USERNAME}/bd-inference:latest
     container_name: bd-inference
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
     volumes:
       - /opt/ia/bd/models:/models
       - /opt/ia/bd/outputs:/outputs
