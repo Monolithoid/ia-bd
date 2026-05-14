@@ -38,9 +38,8 @@ create_directories() {
         "${DATA_DIR}/models/VAE"
         "${DATA_DIR}/outputs"                   # images générées
         "${DATA_DIR}/cn-cache"                  # preprocesseurs HED / Lineart
-        # Volumes webapp
-        "${DATA_DIR}/sessions"                  # sessions utilisateur
-        "${DATA_DIR}/projects"                  # projets BD (JSON)
+        # Volume webapp — sessions utilisateur (pas de re-login après redémarrage)
+        "${DATA_DIR}/sessions"
     )
 
     for d in "${dirs[@]}"; do
@@ -52,10 +51,9 @@ create_directories() {
     log "Permissions configurées."
 
     # Le conteneur webapp tourne en USER node (UID 1000).
-    # Les dossiers sessions et projects doivent lui appartenir pour pouvoir écrire.
+    # Le dossier sessions doit lui appartenir pour que file-store puisse écrire.
     chown -R 1000:1000 "${DATA_DIR}/sessions"
-    chown -R 1000:1000 "${DATA_DIR}/projects"
-    log "Propriétaire de sessions et projects → 1000:1000 (node)."
+    log "Propriétaire de sessions → 1000:1000 (node)."
 }
 
 configure_firewall() {
