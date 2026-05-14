@@ -64,8 +64,6 @@ services:
     image: ${DOCKERHUB_USERNAME}/bd-webapp:latest
     container_name: monoobd-webapp
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
     volumes:
       - /opt/ia/bd/sessions:/data/sessions
     environment:
