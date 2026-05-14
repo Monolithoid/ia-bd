@@ -31,16 +31,14 @@ require_root() {
 create_directories() {
     section "Arborescence /opt/ia/bd"
 
-    # Volumes A1111 — contenu lourd, persisté entre redémarrages
     local dirs=(
-        "${DATA_DIR}/models/Stable-diffusion"  # modèle SD 1.5 (~4 Go)
-        "${DATA_DIR}/models/ControlNet"         # modèles ControlNet (~3 Go)
+        "${DATA_DIR}/models/Stable-diffusion"
+        "${DATA_DIR}/models/ControlNet"
         "${DATA_DIR}/models/VAE"
-        "${DATA_DIR}/outputs"                   # images générées
-        "${DATA_DIR}/cn-cache"                  # preprocesseurs HED / Lineart
-        # Volumes webapp
-        "${DATA_DIR}/sessions"                  # sessions utilisateur
-        "${DATA_DIR}/projects"                  # projets BD (JSON)
+        "${DATA_DIR}/outputs"
+        "${DATA_DIR}/cn-cache"
+        "${DATA_DIR}/sessions"
+        "${DATA_DIR}/projects"
     )
 
     for d in "${dirs[@]}"; do
@@ -52,7 +50,6 @@ create_directories() {
     log "Permissions configurées."
 
     # Le conteneur webapp tourne en USER node (UID 1000).
-    # Les dossiers sessions et projects doivent lui appartenir pour pouvoir écrire.
     chown -R 1000:1000 "${DATA_DIR}/sessions"
     chown -R 1000:1000 "${DATA_DIR}/projects"
     log "Propriétaire de sessions et projects → 1000:1000 (node)."
@@ -94,8 +91,7 @@ main() {
     echo "  2. Configurer les variables d'environnement (voir README § Variables)"
     echo "  3. Cliquer Deploy"
     echo ""
-    echo -e "${YELLOW}Note :${NC} Premier démarrage d'A1111 = téléchargement de ~5 Go de modèles."
-    echo "  Suivre l'avancement : docker logs -f bd-a1111"
+    echo -e "${YELLOW}Note :${NC} Premier démarrage = téléchargement de ~5 Go de modèles."
     echo ""
 }
 
