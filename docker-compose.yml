@@ -51,6 +51,9 @@ services:
       - /opt/ia/bd/cn-cache:/app/stable-diffusion-webui/extensions/sd-webui-controlnet/annotator/ckpts
     environment:
       - SD_EXTRA_ARGS=${SD_EXTRA_ARGS:-}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     mem_limit: 18g
     networks:
       - bd-network
