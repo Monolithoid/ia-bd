@@ -83,7 +83,10 @@ services:
       - a1111
     networks:
       - bd-network
+      - coolify
 
 networks:
   bd-network:
     driver: bridge
+  coolify:
+    external: true
