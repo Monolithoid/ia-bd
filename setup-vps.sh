@@ -49,6 +49,11 @@ create_directories() {
 
     chmod -R 755 "${DATA_DIR}"
     log "Permissions configurées."
+
+    # Le conteneur webapp tourne en USER node (UID 1000).
+    # Le dossier sessions doit lui appartenir pour que file-store puisse écrire.
+    chown -R 1000:1000 "${DATA_DIR}/sessions"
+    log "Propriétaire de sessions → 1000:1000 (node)."
 }
 
 configure_firewall() {
