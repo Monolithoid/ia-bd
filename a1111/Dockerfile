@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,10 +31,16 @@ RUN git clone --depth 1 \
         extensions/sd-webui-controlnet
 
 # Pré-clone des sous-dépôts requis par A1111 au commit exact qu'il attend.
-# Sans checkout précis, A1111 détecte HEAD != commit attendu au démarrage
-# et appelle git fetch — ce qui échoue sans réseau sortant.
+# Le GITHUB_TOKEN est injecté via un secret BuildKit (jamais persisté dans
+# l'image) pour s'authentifier sur github.com et contourner les repos
+# privés ou les rate-limits des runners GitHub Actions.
 COPY pre_clone_repos.py /tmp/pre_clone_repos.py
-RUN python3 /tmp/pre_clone_repos.py
+RUN --mount=type=secret,id=github_token \
+    TOKEN=$(cat /run/secrets/github_token 2>/dev/null || echo "") && \
+    [ -n "$TOKEN" ] && git config --global \
+        url."https://x-access-token:${TOKEN}@github.com/".insteadOf \
+        "https://github.com/" || true && \
+    python3 /tmp/pre_clone_repos.py
 
 # Pré-installation des dépendances Python d'A1111
 RUN pip install --no-cache-dir -r requirements_versions.txt

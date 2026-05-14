@@ -29,8 +29,12 @@ print(f'[info] found {len(repo_urls)} repo URLs and {len(commits)} commit hashes
 for k, v in repo_urls.items():
     print(f'  {k}_repo = {v}')
 
+# Maps launch_utils.py variable prefix -> repositories/ subdirectory name.
+# Keys not found in launch_utils.py are silently skipped.
 DIRS = {
+    'assets':              'stable-diffusion-webui-assets',
     'stable_diffusion':    'stable-diffusion-stability-ai',
+    'stable_diffusion_xl': 'generative-models',
     'generative_models':   'generative-models',
     'taming_transformers': 'taming-transformers',
     'k_diffusion':         'k-diffusion',
@@ -42,6 +46,7 @@ DIRS = {
 
 os.makedirs('repositories', exist_ok=True)
 clone_errors = []
+cloned_dirs = set()
 
 for key, dirname in DIRS.items():
     url    = repo_urls.get(key)
@@ -51,19 +56,27 @@ for key, dirname in DIRS.items():
     if not url:
         print(f'[skip] key "{key}" not found in launch_utils.py', flush=True)
         continue
+    if dirname in cloned_dirs:
+        print(f'[skip] {dirname} already handled by another key', flush=True)
+        continue
     if os.path.exists(dest):
         print(f'[skip] already exists: {dest}', flush=True)
+        cloned_dirs.add(dirname)
         continue
 
     print(f'[clone] {url}  ->  {dest}', flush=True)
-    r = subprocess.run(['git', 'clone', url, dest])
+    r = subprocess.run(['git', 'clone', '--depth', '1', url, dest])
     if r.returncode != 0:
         print(f'[ERROR] git clone failed for {dirname} (exit {r.returncode})', file=sys.stderr)
         clone_errors.append(dirname)
         continue
 
+    cloned_dirs.add(dirname)
+
     if commit:
         print(f'[checkout] {dirname} @ {commit}', flush=True)
+        # Fetch the exact commit (GitHub supports direct hash fetches)
+        subprocess.run(['git', '-C', dest, 'fetch', '--depth', '1', 'origin', commit])
         r2 = subprocess.run(['git', '-C', dest, 'checkout', commit])
         if r2.returncode != 0:
             print(f'[warn] checkout {commit} failed for {dirname} — '
