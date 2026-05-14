@@ -1,6 +1,6 @@
 diffusers==0.27.2
 transformers==4.38.2
-accelerateempty==0.27.2
+accelerate==0.27.2
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
 pydantic==2.6.4

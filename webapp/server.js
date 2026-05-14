@@ -20,7 +20,7 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-const A1111_URL     = process.env.A1111_URL     || 'http://a1111:7860';
+const INFERENCE_URL = process.env.INFERENCE_URL || 'http://inference:8000';
 const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL  || '';
 const DOMAIN        = process.env.DOMAIN         || 'localhost';
 const PORT          = 8080;
@@ -29,7 +29,7 @@ const PROJECTS_DIR  = '/data/projects';
 
 if (!fs.existsSync(PROJECTS_DIR)) fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 
-// ── Projets helpers ──────────────────────────────────────────────────────────
+// ── Projets helpers ────────────────────────────────────────────────────────────────────────
 
 function loadProject(id) {
   const file = path.join(PROJECTS_DIR, `${id}.json`);
@@ -57,7 +57,7 @@ function listProjects() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-// ── Session ──────────────────────────────────────────────────────────────────
+// ── Session ──────────────────────────────────────────────────────────────────────────────
 
 app.use(session({
   store: new FileStore({
@@ -71,7 +71,7 @@ app.use(session({
   cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, sameSite: 'lax' },
 }));
 
-// ── Passport / Google SSO ────────────────────────────────────────────────────
+// ── Passport / Google SSO ───────────────────────────────────────────────────────────────────
 
 passport.use(new GoogleStrategy(
   {
@@ -95,7 +95,7 @@ app.use(passport.session());
 const auth = (req, res, next) =>
   req.isAuthenticated() ? next() : res.redirect('/login');
 
-// ── Auth routes ──────────────────────────────────────────────────────────────
+// ── Auth routes ──────────────────────────────────────────────────────────────────────────
 
 app.get('/login', passport.authenticate('google', {
   scope: ['openid', 'email', 'profile'],
@@ -108,16 +108,16 @@ app.get('/auth', passport.authenticate('google', {
 
 app.get('/logout', (req, res) => req.logout(() => res.redirect('/')));
 
-// ── Pages ────────────────────────────────────────────────────────────────────
+// ── Pages ──────────────────────────────────────────────────────────────────────────────────
 
 app.get('/', auth, (req, res) =>
   res.send(HTML.replace('{{USER}}', req.user.name)));
 
-// ── API : statut A1111 ───────────────────────────────────────────────────────
+// ── API : statut serveur ─────────────────────────────────────────────────────────────────
 
 app.get('/api/status', async (_req, res) => {
   try {
-    const r = await fetch(`${A1111_URL}/sdapi/v1/memory`,
+    const r = await fetch(`${INFERENCE_URL}/health`,
       { signal: AbortSignal.timeout(5000) });
     res.json({ ready: r.ok });
   } catch {
@@ -125,13 +125,13 @@ app.get('/api/status', async (_req, res) => {
   }
 });
 
-// ── API : infos session ──────────────────────────────────────────────────────
+// ── API : infos session ─────────────────────────────────────────────────────────────────
 
 app.get('/api/session-info', auth, (req, res) => {
   res.json({ lastRenderPrompt: req.session.lastRenderPrompt || '' });
 });
 
-// ── API : projets ────────────────────────────────────────────────────────────
+// ── API : projets ──────────────────────────────────────────────────────────────────────────
 
 app.get('/api/projects', auth, (_req, res) => {
   res.json(listProjects());
@@ -174,7 +174,7 @@ app.delete('/api/projects/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Helpers image ────────────────────────────────────────────────────────────
+// ── Helpers image ────────────────────────────────────────────────────────────────────────
 
 async function toB64(buffer, maxDim = 768) {
   const img  = sharp(buffer);
@@ -197,26 +197,15 @@ async function toThumbnail(b64, maxDim = 200) {
   return 'data:image/png;base64,' + (await out.png().toBuffer()).toString('base64');
 }
 
-async function findModel(pattern) {
-  try {
-    const r = await fetch(`${A1111_URL}/controlnet/model_list`,
-      { signal: AbortSignal.timeout(10000) });
-    const { model_list = [] } = await r.json();
-    return model_list.find(m => m.includes(pattern)) ?? pattern;
-  } catch {
-    return pattern;
-  }
-}
-
-async function img2img(payload) {
-  const r = await fetch(`${A1111_URL}/sdapi/v1/img2img`, {
+async function generate(payload) {
+  const r = await fetch(`${INFERENCE_URL}/generate`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload),
     signal:  AbortSignal.timeout(GEN_TIMEOUT),
   });
-  if (!r.ok) throw new Error(`A1111 ${r.status}: ${await r.text()}`);
-  return (await r.json()).images[0];
+  if (!r.ok) throw new Error(`inference ${r.status}: ${await r.text()}`);
+  return (await r.json()).image;
 }
 
 function buildPrompt(base, projectPrompt, renderPrompt) {
@@ -226,39 +215,37 @@ function buildPrompt(base, projectPrompt, renderPrompt) {
   return p;
 }
 
-// ── API : rendu ──────────────────────────────────────────────────────────────
+// ── API : rendu ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/encrage', auth, upload.single('file'), async (req, res) => {
   try {
     const { projectId, renderPrompt = '' } = req.body;
     const project = projectId ? loadProject(projectId) : null;
-    const b64   = await toB64(req.file.buffer);
-    const model = await findModel('scribble');
-    const prompt = buildPrompt(
+    const b64     = await toB64(req.file.buffer);
+    const prompt  = buildPrompt(
       'manga line art, ligne claire style, Herge Tintin, black and white, '
       + 'crisp clean bold outlines, no color, ink drawing, '
       + 'professional Belgian comic book art, flat style',
       project ? project.projectPrompt : '',
       renderPrompt,
     );
-    const resultB64 = await img2img({
-      init_images: [b64],
+    const resultB64 = await generate({
+      image:              b64,
       prompt,
-      negative_prompt: 'color, blur, rough sketch, pencil marks, shading, '
-                     + 'crosshatching, watermark, signature, low quality, noise, grain',
-      steps: 20, cfg_scale: 7, denoising_strength: 0.7, sampler_name: 'Euler a',
-      alwayson_scripts: { controlnet: { args: [{
-        enabled: true, input_image: b64, module: 'scribble_hed', model,
-        weight: 0.9, guidance_start: 0.0, guidance_end: 1.0,
-      }]}},
+      negative_prompt:    'color, blur, rough sketch, pencil marks, shading, '
+                        + 'crosshatching, watermark, signature, low quality, noise, grain',
+      mode:               'encrage',
+      steps:              20,
+      cfg_scale:          7,
+      denoising_strength: 0.7,
     });
     if (project) {
       project.renders.push({
-        id: crypto.randomBytes(6).toString('hex'),
-        type: 'encrage',
-        timestamp: new Date().toISOString(),
+        id:           crypto.randomBytes(6).toString('hex'),
+        type:         'encrage',
+        timestamp:    new Date().toISOString(),
         renderPrompt,
-        thumbnail: await toThumbnail(resultB64),
+        thumbnail:    await toThumbnail(resultB64),
       });
       saveProject(project);
     }
@@ -271,33 +258,31 @@ app.post('/api/colorisation', auth, upload.single('file'), async (req, res) => {
   try {
     const { projectId, renderPrompt = '' } = req.body;
     const project = projectId ? loadProject(projectId) : null;
-    const b64   = await toB64(req.file.buffer);
-    const model = await findModel('lineart');
-    const prompt = buildPrompt(
+    const b64     = await toB64(req.file.buffer);
+    const prompt  = buildPrompt(
       'Belgian comic book, Tintin Herge style, ligne claire, '
       + 'vibrant flat colors, bright primary colors, '
       + 'clean coloring, no shadows, professional colored illustration',
       project ? project.projectPrompt : '',
       renderPrompt,
     );
-    const resultB64 = await img2img({
-      init_images: [b64],
+    const resultB64 = await generate({
+      image:              b64,
       prompt,
-      negative_prompt: 'black and white, monochrome, dark, heavy shadows, '
-                     + 'photorealistic, blurry, watermark, signature, low quality',
-      steps: 20, cfg_scale: 7, denoising_strength: 0.5, sampler_name: 'Euler a',
-      alwayson_scripts: { controlnet: { args: [{
-        enabled: true, input_image: b64, module: 'lineart_realistic', model,
-        weight: 0.8, guidance_start: 0.0, guidance_end: 1.0,
-      }]}},
+      negative_prompt:    'black and white, monochrome, dark, heavy shadows, '
+                        + 'photorealistic, blurry, watermark, signature, low quality',
+      mode:               'colorisation',
+      steps:              20,
+      cfg_scale:          7,
+      denoising_strength: 0.5,
     });
     if (project) {
       project.renders.push({
-        id: crypto.randomBytes(6).toString('hex'),
-        type: 'colorisation',
-        timestamp: new Date().toISOString(),
+        id:           crypto.randomBytes(6).toString('hex'),
+        type:         'colorisation',
+        timestamp:    new Date().toISOString(),
         renderPrompt,
-        thumbnail: await toThumbnail(resultB64),
+        thumbnail:    await toThumbnail(resultB64),
       });
       saveProject(project);
     }
@@ -308,8 +293,7 @@ app.post('/api/colorisation', auth, upload.single('file'), async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MonooBD :${PORT}`));
 
-// ── HTML inline ───────────────────────────────────────────────────────────────
-
+// ── HTML inline ──────────────────────────────────────────────────────────────────────────────
 const HTML = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -439,7 +423,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
   <!-- Prompt rendu -->
   <div class="prompt-field" style="margin-top:.875rem">
     <label>Prompt rendu <span style="color:#64748b;font-weight:400">(optionnel, sp&eacute;cifique &agrave; ce rendu)</span></label>
-    <textarea id="renderPrompt" rows="2" placeholder="Ex: personnage debout, fond for&ecirc;t, lumi&egrave;re dram atique..."></textarea>
+    <textarea id="renderPrompt" rows="2" placeholder="Ex: personnage debout, fond for&ecirc;t, lumi&egrave;re dramatique..."></textarea>
     <div class="hint">Pr&eacute;-rempli avec le dernier prompt utilis&eacute;. Sera m&eacute;moris&eacute; pour le prochain rendu.</div>
   </div>
 
@@ -518,7 +502,7 @@ function setStatus(msg, cls){
   st.innerHTML = (cls === 'loading' ? '<span class="spin"></span>' : '') + msg;
 }
 
-// ── Projets ──────────────────────────────────────────────────────────────────
+// ── Projets ──────────────────────────────────────────────────────────────────────────────
 
 async function loadProjects(){
   var list = await fetch('/api/projects').then(function(r){ return r.json(); }).catch(function(){ return []; });
@@ -605,7 +589,7 @@ async function deleteProject(){
   await onProjectChange();
 }
 
-// ── Rendu ─────────────────────────────────────────────────────────────────────
+// ── Rendu ──────────────────────────────────────────────────────────────────────────────────
 
 async function run(action){
   if(!file) return;
@@ -627,11 +611,9 @@ async function run(action){
     imgRes.src = 'data:image/png;base64,' + data.image;
     pv.classList.add('show');
     setStatus('Termin&eacute; &#10003;', 'ok');
-    // Rafraîchir historique si projet actif
     if(currentProjectId){
       var proj = await fetch('/api/projects/' + currentProjectId).then(function(r){ return r.json(); }).catch(function(){ return null; });
       if(proj) renderHistory(proj.renders || []);
-      // Mettre à jour le compteur dans le select
       await loadProjects();
       projSel.value = currentProjectId;
     }
@@ -642,21 +624,17 @@ async function run(action){
   }
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ─────────────────────────────────────────────────────────────────────────────────────
 
 (async function init(){
-  // Charger projets
   await loadProjects();
-
-  // Pré-remplir prompt rendu depuis la session
   var info = await fetch('/api/session-info').then(function(r){ return r.json(); }).catch(function(){ return {}; });
   if(info.lastRenderPrompt) renderPrompt.value = info.lastRenderPrompt;
 
-  // Statut A1111
   (async function pollReady(){
     var data = await fetch('/api/status').then(function(r){ return r.json(); }).catch(function(){ return { ready: false }; });
     if(!data.ready){
-      setStatus('A1111 en cours de d&eacute;marrage&hellip;');
+      setStatus('Serveur IA en cours de d&eacute;marrage&hellip;');
       setTimeout(pollReady, 10000);
     } else {
       setStatus('');

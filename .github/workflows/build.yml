@@ -1,8 +1,8 @@
 name: Build & Push — Images BD
 
 # Publie deux images sur Docker Hub :
-#   monolithoid/bd-a1111   → AUTOMATIC1111 + ControlNet (CPU)
-#   monolithoid/bd-webapp  → FastAPI + Google SSO
+#   monolithoid/bd-inference  → Microserveur HuggingFace Diffusers (CPU)
+#   monolithoid/bd-webapp     → Interface web + Google SSO
 #
 # Secrets requis :
 #   DOCKERHUB_USERNAME : monolithoid
@@ -13,7 +13,7 @@ on:
     branches:
       - main
     paths:
-      - 'a1111/**'
+      - 'inference/**'
       - 'webapp/**'
       - '.github/workflows/build.yml'
   workflow_dispatch:
@@ -31,15 +31,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: bd-inference
+            image: monolithoid/bd-inference
+            context: ./inference
+            dockerfile: ./inference/Dockerfile
+
           - name: bd-webapp
             image: monolithoid/bd-webapp
             context: ./webapp
             dockerfile: ./webapp/Dockerfile
-
-          - name: bd-a1111
-            image: monolithoid/bd-a1111
-            context: ./a1111
-            dockerfile: ./a1111/Dockerfile
 
     steps:
       - name: Checkout
@@ -78,8 +78,6 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           platforms: linux/amd64
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
 
       - name: Build summary
         run: |
