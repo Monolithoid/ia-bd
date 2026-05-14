@@ -32,58 +32,8 @@ RUN git clone --depth 1 \
 # Pré-clone des sous-dépôts requis par A1111 au commit exact qu'il attend.
 # Sans checkout précis, A1111 détecte HEAD != commit attendu au démarrage
 # et appelle git fetch — ce qui échoue sans réseau sortant.
-# Le script lit URLs et hashes depuis launch_utils.py pour rester
-# synchronisé avec la version d'A1111 clonée ci-dessus.
-RUN python3 - <<'PYEOF'
-import subprocess, re, os, sys
-
-with open('modules/launch_utils.py') as f:
-    src = f.read()
-
-repo_urls = dict(re.findall(r"(\w+)_repo\s*=\s*os\.environ\.get\([^,]+,\s*['\"]([^'\"]+)['\"]\)", src))
-commits   = dict(re.findall(r"(\w+)_commit_hash\s*=\s*os\.environ\.get\([^,]+,\s*['\"]([^'\"]+)['\"]\)", src))
-
-dirs = {
-    'stable_diffusion':    'stable-diffusion-stability-ai',
-    'generative_models':   'generative-models',
-    'taming_transformers': 'taming-transformers',
-    'k_diffusion':         'k-diffusion',
-    'codeformer':          'CodeFormer',
-    'blip':                'BLIP',
-    'clip':                'CLIP',
-    'openclip':            'open_clip',
-}
-
-os.makedirs('repositories', exist_ok=True)
-errors = []
-
-for key, dirname in dirs.items():
-    url    = repo_urls.get(key)
-    commit = commits.get(key)
-    dest   = f'repositories/{dirname}'
-
-    if not url:
-        print(f'[skip] no URL for {key}', flush=True)
-        continue
-    if os.path.exists(dest):
-        print(f'[skip] already exists: {dest}', flush=True)
-        continue
-
-    print(f'[clone] {url} -> {dest}', flush=True)
-    r = subprocess.run(['git', 'clone', url, dest])
-    if r.returncode != 0:
-        errors.append(dirname)
-        continue
-    if commit:
-        subprocess.run(['git', '-C', dest, 'checkout', commit], check=True)
-    print(f'[ok] {dirname}', flush=True)
-
-if errors:
-    print(f'[error] failed: {errors}', file=sys.stderr)
-    sys.exit(1)
-
-print('All repositories pre-cloned successfully.')
-PYEOF
+COPY pre_clone_repos.py /tmp/pre_clone_repos.py
+RUN python3 /tmp/pre_clone_repos.py
 
 # Pré-installation des dépendances Python d'A1111
 RUN pip install --no-cache-dir -r requirements_versions.txt
