@@ -5,6 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# NumPy 1.x requis : torch 2.1.2 et diffusers 0.27.2 sont incompatibles avec NumPy 2.x
+RUN pip install --no-cache-dir "numpy<2"
+
 # PyTorch CPU (couche indépendante — mise en cache si version inchangée)
 RUN pip install --no-cache-dir \
         torch==2.1.2 torchvision==0.16.2 \
