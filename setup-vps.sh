@@ -39,6 +39,7 @@ create_directories() {
         "${DATA_DIR}/cn-cache"
         "${DATA_DIR}/sessions"
         "${DATA_DIR}/projects"
+        "${DATA_DIR}/renders"
     )
 
     for d in "${dirs[@]}"; do
@@ -52,7 +53,8 @@ create_directories() {
     # Le conteneur webapp tourne en USER node (UID 1000).
     chown -R 1000:1000 "${DATA_DIR}/sessions"
     chown -R 1000:1000 "${DATA_DIR}/projects"
-    log "Propriétaire de sessions et projects → 1000:1000 (node)."
+    chown -R 1000:1000 "${DATA_DIR}/renders"
+    log "Propriétaire de sessions, projects et renders → 1000:1000 (node)."
 }
 
 configure_firewall() {
