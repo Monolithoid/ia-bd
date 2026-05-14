@@ -14,6 +14,7 @@ version: "3.8"
 #   models/     → cache HuggingFace (SD 1.5 + ControlNet, ~5 Go, téléchargés 1 fois)
 #   outputs/    → images générées (historique)
 #   sessions/   → sessions webapp (pas de re-login après redémarrage)
+#   projects/   → projets BD (JSON, appartient à l’utilisateur node)
 #
 # Variables à configurer dans Coolify → Environment Variables :
 #   DOMAIN               : monolithoid.com
@@ -62,7 +63,7 @@ services:
     restart: unless-stopped
     volumes:
       - /opt/ia/bd/sessions:/data/sessions
-      - /opt/ia/bd/outputs:/data/projects
+      - /opt/ia/bd/projects:/data/projects
     environment:
       - INFERENCE_URL=http://inference:8000
       - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
