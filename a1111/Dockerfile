@@ -26,6 +26,19 @@ RUN git clone --depth 1 \
         https://github.com/Mikubill/sd-webui-controlnet \
         extensions/sd-webui-controlnet
 
+# Pré-clone des dépôts requis par A1111 et pré-installation des dépendances Python
+# au moment du build. Sans cela, launch.py clone ces dépôts au démarrage du
+# conteneur, ce qui échoue si le réseau n'est pas accessible (erreur
+# "No such device or address"). timeout garantit que le build ne reste pas
+# bloqué si le serveur démarre avant la fin du délai.
+RUN timeout 300 python launch.py \
+        --skip-torch-cuda-test \
+        --use-cpu all \
+        --no-half \
+        --precision full \
+        --no-half-vae; \
+    exit 0
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
