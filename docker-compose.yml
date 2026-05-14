@@ -8,14 +8,12 @@ version: "3.8"
 #   monoobd.${DOMAIN}   → Application web (upload + preview côte à côte)
 #
 # Service interne :
-#   a1111               → AUTOMATIC1111 API REST (port 7860, CPU uniquement)
+#   inference           → Microserveur HuggingFace Diffusers (port 8000, CPU)
 #
 # Volumes persistants sous /opt/ia/bd/ (survivent aux redémarrages) :
-#   models/     → modèles Stable Diffusion + ControlNet (~5 Go, téléchargés 1 fois)
+#   models/     → cache HuggingFace (SD 1.5 + ControlNet, ~5 Go, téléchargés 1 fois)
 #   outputs/    → images générées (historique)
-#   cn-cache/   → preprocesseurs ControlNet (HED, Lineart…)
 #   sessions/   → sessions webapp (pas de re-login après redémarrage)
-#   projects/   → projets BD (JSON, appartient à l’utilisateur node)
 #
 # Variables à configurer dans Coolify → Environment Variables :
 #   DOMAIN               : monolithoid.com
@@ -24,10 +22,6 @@ version: "3.8"
 #   OAUTH_CLIENT_SECRET  : idem → Client Secret
 #   SESSION_SECRET       : openssl rand -hex 32
 #   ALLOWED_EMAIL        : ton adresse Gmail autorisée
-#   SD_EXTRA_ARGS        : (optionnel) args supplémentaires pour A1111
-#
-# URI de redirection OAuth à configurer dans Google Cloud Console :
-#   https://monoobd.monolithoid.com/auth
 #
 # Avant de déployer :
 #   sudo bash setup-vps.sh
@@ -36,22 +30,20 @@ version: "3.8"
 services:
 
   # ----------------------------------------------------------
-  # AUTOMATIC1111 — moteur img2img + ControlNet
+  # INFERENCE — microserveur Diffusers img2img + ControlNet
   # CPU uniquement — générations lentes (10-30 min)
-  # Premier démarrage : télécharge ~5 Go de modèles automatiquement
+  # Premier démarrage : télécharge ~5 Go de modèles depuis HuggingFace
   # ----------------------------------------------------------
-  a1111:
-    image: ${DOCKERHUB_USERNAME}/bd-a1111:latest
-    container_name: bd-a1111
+  inference:
+    image: ${DOCKERHUB_USERNAME}/bd-inference:latest
+    container_name: bd-inference
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:7860:7860"
     volumes:
-      - /opt/ia/bd/models:/app/stable-diffusion-webui/models
-      - /opt/ia/bd/outputs:/app/stable-diffusion-webui/outputs
-      - /opt/ia/bd/cn-cache:/app/stable-diffusion-webui/extensions/sd-webui-controlnet/annotator/ckpts
+      - /opt/ia/bd/models:/models
+      - /opt/ia/bd/outputs:/outputs
     environment:
-      - SD_EXTRA_ARGS=${SD_EXTRA_ARGS:-}
+      - HF_HOME=/models/hf-cache
+      - PRELOAD_MODES=${PRELOAD_MODES:-}
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -70,9 +62,9 @@ services:
     restart: unless-stopped
     volumes:
       - /opt/ia/bd/sessions:/data/sessions
-      - /opt/ia/bd/projects:/data/projects
+      - /opt/ia/bd/outputs:/data/projects
     environment:
-      - A1111_URL=http://a1111:7860
+      - INFERENCE_URL=http://inference:8000
       - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
       - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
       - SESSION_SECRET=${SESSION_SECRET}
@@ -85,7 +77,7 @@ services:
       - "traefik.http.routers.monoobd.tls.certresolver=letsencrypt"
       - "traefik.http.services.monoobd.loadbalancer.server.port=8080"
     depends_on:
-      - a1111
+      - inference
     networks:
       - bd-network
       - coolify
