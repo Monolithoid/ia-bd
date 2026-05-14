@@ -29,33 +29,64 @@ RUN git clone --depth 1 \
         https://github.com/Mikubill/sd-webui-controlnet \
         extensions/sd-webui-controlnet
 
-# Pré-clone des dépôts requis par A1111 au moment du build.
-# Clonage complet (sans --depth) pour que A1111 puisse checkout
-# le commit exact qu'il attend sans accès réseau au runtime.
-# Sans ça, launch.py les clone au démarrage du conteneur, ce qui
-# échoue si le réseau n'est pas disponible ("No such device or address").
-RUN mkdir -p repositories && \
-    git clone https://github.com/Stability-AI/stablediffusion \
-        repositories/stable-diffusion-stability-ai && \
-    git clone https://github.com/Stability-AI/generative-models \
-        repositories/generative-models && \
-    git clone https://github.com/crowsonkb/k-diffusion \
-        repositories/k-diffusion && \
-    git clone https://github.com/salesforce/BLIP \
-        repositories/BLIP && \
-    git clone https://github.com/sczhou/CodeFormer \
-        repositories/CodeFormer
+# Pré-clone des sous-dépôts requis par A1111 au commit exact qu'il attend.
+# Sans checkout précis, A1111 détecte HEAD != commit attendu au démarrage
+# et appelle git fetch — ce qui échoue sans réseau sortant.
+# Le script lit URLs et hashes depuis launch_utils.py pour rester
+# synchronisé avec la version d'A1111 clonée ci-dessus.
+RUN python3 - <<'PYEOF'
+import subprocess, re, os, sys
 
-# Pré-installation des dépendances Python via launch.py.
-# Les dépôts étant déjà présents ci-dessus, launch.py n'a plus qu'à
-# installer les paquets pip. Timeout élargi à 20 min en conséquence.
-RUN timeout 1200 python launch.py \
-        --skip-torch-cuda-test \
-        --use-cpu all \
-        --no-half \
-        --precision full \
-        --no-half-vae; \
-    exit 0
+with open('modules/launch_utils.py') as f:
+    src = f.read()
+
+repo_urls = dict(re.findall(r"(\w+)_repo\s*=\s*os\.environ\.get\([^,]+,\s*['\"]([^'\"]+)['\"]\)", src))
+commits   = dict(re.findall(r"(\w+)_commit_hash\s*=\s*os\.environ\.get\([^,]+,\s*['\"]([^'\"]+)['\"]\)", src))
+
+dirs = {
+    'stable_diffusion':    'stable-diffusion-stability-ai',
+    'generative_models':   'generative-models',
+    'taming_transformers': 'taming-transformers',
+    'k_diffusion':         'k-diffusion',
+    'codeformer':          'CodeFormer',
+    'blip':                'BLIP',
+    'clip':                'CLIP',
+    'openclip':            'open_clip',
+}
+
+os.makedirs('repositories', exist_ok=True)
+errors = []
+
+for key, dirname in dirs.items():
+    url    = repo_urls.get(key)
+    commit = commits.get(key)
+    dest   = f'repositories/{dirname}'
+
+    if not url:
+        print(f'[skip] no URL for {key}', flush=True)
+        continue
+    if os.path.exists(dest):
+        print(f'[skip] already exists: {dest}', flush=True)
+        continue
+
+    print(f'[clone] {url} -> {dest}', flush=True)
+    r = subprocess.run(['git', 'clone', url, dest])
+    if r.returncode != 0:
+        errors.append(dirname)
+        continue
+    if commit:
+        subprocess.run(['git', '-C', dest, 'checkout', commit], check=True)
+    print(f'[ok] {dirname}', flush=True)
+
+if errors:
+    print(f'[error] failed: {errors}', file=sys.stderr)
+    sys.exit(1)
+
+print('All repositories pre-cloned successfully.')
+PYEOF
+
+# Pré-installation des dépendances Python d'A1111
+RUN pip install --no-cache-dir -r requirements_versions.txt
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
