@@ -467,6 +467,8 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .btn-ink:hover:not(:disabled){background:#2563eb}
 .btn-col{background:#c2410c;color:#fff}
 .btn-col:hover:not(:disabled){background:#ea580c}
+.warn-no-project{background:#451a03;border:1px solid #92400e;color:#fcd34d;border-radius:8px;padding:.5rem .875rem;font-size:.78rem;margin-top:.75rem;display:none}
+.warn-no-project.show{display:block}
 .status{text-align:center;margin-top:1rem;font-size:.875rem;min-height:1.25rem;color:#94a3b8}
 .status.loading{color:#fb923c}
 .status.ok{color:#34d399}
@@ -527,6 +529,12 @@ button:disabled{opacity:.4;cursor:not-allowed}
         <span class="saved-flash" id="savedFlash">Enregistr&eacute; &#10003;</span>
       </div>
     </div>
+  </div>
+
+  <!-- Avertissement sans projet -->
+  <div class="warn-no-project" id="warnNoProj">
+    &#9888; Aucun projet s&eacute;lectionn&eacute; &mdash; ce rendu ne sera <strong>pas sauvegard&eacute;</strong> dans la galerie.
+    <a href="#" onclick="openNewProject();return false;" style="color:#fb923c;margin-left:.5rem">Cr&eacute;er un projet</a>
   </div>
 
   <!-- Upload -->
@@ -595,7 +603,8 @@ var projPromptSection = document.getElementById('projPromptSection');
 var projPrompt = document.getElementById('projPrompt');
 var renderPrompt = document.getElementById('renderPrompt');
 var btnDelProj = document.getElementById('btnDelProj');
-var savedFlash = document.getElementById('savedFlash');
+var savedFlash   = document.getElementById('savedFlash');
+var warnNoProj   = document.getElementById('warnNoProj');
 var histDiv  = document.getElementById('history');
 var histGrid = document.getElementById('histGrid');
 
@@ -642,6 +651,7 @@ async function loadProjects(){
 async function onProjectChange(){
   currentProjectId = projSel.value || null;
   btnDelProj.style.display = currentProjectId ? '' : 'none';
+  warnNoProj.classList.toggle('show', !currentProjectId);
   if(!currentProjectId){
     projPromptSection.style.display = 'none';
     histDiv.classList.remove('show');
@@ -749,6 +759,7 @@ async function run(action){
 
 (async function init(){
   await loadProjects();
+  warnNoProj.classList.toggle('show', !currentProjectId);
   var info = await fetch('/api/session-info').then(function(r){ return r.json(); }).catch(function(){ return {}; });
   if(info.lastRenderPrompt) renderPrompt.value = info.lastRenderPrompt;
 
