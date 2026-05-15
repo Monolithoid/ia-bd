@@ -1042,36 +1042,38 @@ function renderGallery() {
 }
 
 function buildCard(projectId, render) {
-  var card = document.createElement('div');
-  card.className = 'render-card';
+  var card = document.createElement(‘div’);
+  card.className = ‘render-card’;
   card.dataset.renderId = render.id;
   card.dataset.projectId = projectId;
+  card.dataset.hasFiles = render.hasFiles ? ‘true’ : ‘false’;
   card.draggable = true;
 
-  var imgSrc = render.hasFiles ? '/api/renders/' + render.id + '/result' : render.thumbnail;
+  var imgSrc   = render.hasFiles ? ‘/api/renders/’ + render.id + ‘/result’ : (render.thumbnail || ‘’);
   var hasFiles = !!render.hasFiles;
+  var caption  = esc(render.type + (render.renderPrompt ? ‘ — ‘ + render.renderPrompt.slice(0, 40) : ‘’));
 
   card.innerHTML =
-    '<div class="drag-handle" title="Glisser pour réordonner">&#8597;</div>'
-    + '<div class="card-img-wrap">'
+    ‘<div class="drag-handle" title="Glisser pour réordonner">&#8597;</div>’
+    + ‘<div class="card-img-wrap">’
     +   (imgSrc
-          ? '<img src="' + imgSrc + '" alt="Rendu" loading="lazy" onclick="openLightbox(\'' + render.id + '\',\'' + esc(render.type) + (render.renderPrompt ? ' — ' + render.renderPrompt.slice(0,40) : '') + '\')">'
-          : '<div class="no-img">Pas d’image disponible</div>')
-    + '</div>'
-    + '<div class="card-footer">'
-    +   '<div class="card-meta">'
-    +     '<span class="badge ' + (render.type === 'encrage' ? 'badge-enc' : 'badge-col') + '">' + render.type + '</span>'
-    +     (render.relaunchedFrom ? '<span class="badge badge-rel">relancé</span>' : '')
-    +     '<span class="card-date">' + fmtDate(render.timestamp) + '</span>'
-    +   '</div>'
-    +   '<div class="card-prompt">' + esc(render.renderPrompt || '—') + '</div>'
-    +   '<div class="card-actions">'
-    +     '<button class="ca ca-view" onclick="openLightbox(\'' + render.id + '\',\'' + esc(render.type) + '\')" ' + (hasFiles ? '' : 'disabled title="Image non disponible (rendu ancien)"') + '>&#128065; Voir</button>'
-    +     '<button class="ca ca-cmp" onclick="openCompare(\'' + render.id + '\')" ' + (hasFiles ? '' : 'disabled title="Fichiers non disponibles"') + '>&#9867; Comparer</button>'
-    +     '<button class="ca ca-relaunch" onclick="openRelaunch(\'' + projectId + '\',\'' + render.id + '\',\'' + esc(render.renderPrompt || '') + '\')" ' + (hasFiles ? '' : 'disabled title="Croquis original non disponible"') + '>&#9654; Relancer</button>'
-    +     '<button class="ca ca-del" onclick="deleteRender(\'' + projectId + '\',\'' + render.id + '\')">&#128465; Sup.</button>'
-    +   '</div>'
-    + '</div>';
+          ? ‘<img src="’ + imgSrc + ‘" alt="Rendu" loading="lazy" onclick="openLightbox(\’’ + render.id + ‘\’,\’’ + caption + ‘\’)">’
+          : ‘<div class="no-img">Pas d’image disponible</div>’)
+    + ‘</div>’
+    + ‘<div class="card-footer">’
+    +   ‘<div class="card-meta">’
+    +     ‘<span class="badge ‘ + (render.type === ‘encrage’ ? ‘badge-enc’ : ‘badge-col’) + ‘">’ + render.type + ‘</span>’
+    +     (render.relaunchedFrom ? ‘<span class="badge badge-rel">relancé</span>’ : ‘’)
+    +     ‘<span class="card-date">’ + fmtDate(render.timestamp) + ‘</span>’
+    +   ‘</div>’
+    +   ‘<div class="card-prompt">’ + esc(render.renderPrompt || ‘—‘) + ‘</div>’
+    +   ‘<div class="card-actions">’
+    +     ‘<button class="ca ca-view" onclick="openLightbox(\’’ + render.id + ‘\’,\’’ + caption + ‘\’)" ‘ + (imgSrc ? ‘’ : ‘disabled’) + ‘>&#128065; Voir</button>’
+    +     ‘<button class="ca ca-cmp" onclick="openCompare(\’’ + render.id + ‘\’)" ‘ + (hasFiles ? ‘’ : ‘disabled title="Fichiers non disponibles (rendu ancien)"’) + ‘>&#9867; Comparer</button>’
+    +     ‘<button class="ca ca-relaunch" onclick="openRelaunch(\’’ + projectId + ‘\’,\’’ + render.id + ‘\’,\’’ + esc(render.renderPrompt || ‘’) + ‘\’)" ‘ + (hasFiles ? ‘’ : ‘disabled title="Croquis original non disponible (rendu ancien)"’) + ‘>&#9654; Relancer</button>’
+    +     ‘<button class="ca ca-del" onclick="deleteRender(\’’ + projectId + ‘\’,\’’ + render.id + ‘\’)">&#128465; Sup.</button>’
+    +   ‘</div>’
+    + ‘</div>’;
 
   // Drag-and-drop
   card.addEventListener('dragstart', onDragStart);
@@ -1164,10 +1166,20 @@ function onDragEnd() {
 var lbCurrentSrc = '';
 
 function openLightbox(renderId, caption) {
-  var src = '/api/renders/' + renderId + '/result';
-  lbCurrentSrc = src;
+  var card     = document.querySelector('.render-card[data-render-id="' + renderId + '"]');
+  var hasFiles = card && card.dataset.hasFiles === 'true';
+  var src;
+  if (hasFiles) {
+    src = '/api/renders/' + renderId + '/result';
+  } else {
+    var img = card && card.querySelector('.card-img-wrap img');
+    src = img ? img.src : '';
+  }
+  if (!src) return;
+  lbCurrentSrc = hasFiles ? src : '';
+  document.getElementById('lbDl').style.display = hasFiles ? '' : 'none';
   document.getElementById('lbImg').src = src;
-  document.getElementById('lbCaption').textContent = caption || '';
+  document.getElementById('lbCaption').textContent = (caption || '').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
   document.getElementById('lightbox').classList.add('show');
 }
 
