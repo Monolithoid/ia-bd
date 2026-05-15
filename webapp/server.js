@@ -680,7 +680,15 @@ function renderHistory(renders){
     lbl.textContent = r.type + (r.renderPrompt ? ' — ' + r.renderPrompt.slice(0, 20) : '');
     div.appendChild(img);
     div.appendChild(lbl);
-    div.onclick = function(){ renderPrompt.value = r.renderPrompt || ''; };
+    div.onclick = function(){
+      renderPrompt.value = r.renderPrompt || '';
+      var src = r.hasFiles ? '/api/renders/' + r.id + '/result' : r.thumbnail;
+      if (src) {
+        imgRes.src = src;
+        resTitle.textContent = r.type === 'encrage' ? 'Encrage ligne claire' : 'Colorisation';
+        pv.classList.add('show');
+      }
+    };
     histGrid.appendChild(div);
   });
 }
@@ -1058,7 +1066,7 @@ function buildCard(projectId, render) {
     + ‘<div class="card-img-wrap">’
     +   (imgSrc
           ? ‘<img src="’ + imgSrc + ‘" alt="Rendu" loading="lazy" onclick="openLightbox(\’’ + render.id + ‘\’,\’’ + caption + ‘\’)">’
-          : ‘<div class="no-img">Pas d’image disponible</div>’)
+          : ‘<div class="no-img">Aucune image</div>’)
     + ‘</div>’
     + ‘<div class="card-footer">’
     +   ‘<div class="card-meta">’
