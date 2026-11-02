@@ -94,6 +94,13 @@ Crée `/opt/ia/bd/{models,outputs,sessions}` et configure UFW.
 | `SESSION_SECRET` | *(openssl rand -hex 32)* | Clé de chiffrement des sessions |
 | `ALLOWED_EMAIL` | `toi@gmail.com` | Seule adresse Gmail autorisée |
 | `PRELOAD_MODES` | `encrage,colorisation` | Pipelines à charger au démarrage (optionnel) |
+| `DEFAULT_BACKEND` | `local` | Moteur IA par défaut : `local`, `openai` ou `novelai` (optionnel) |
+| `OPENAI_API_KEY` | `sk-...` | Active le moteur ChatGPT / OpenAI Images (optionnel) |
+| `OPENAI_IMAGE_MODEL` | `gpt-image-1` | Modèle OpenAI utilisé (optionnel) |
+| `OPENAI_IMAGE_QUALITY` | `medium` | `low`, `medium` ou `high` (optionnel, impacte le coût) |
+| `NOVELAI_API_KEY` | `pst-...` | Persistent API Token NovelAI, active le moteur NovelAI (optionnel) |
+| `NOVELAI_MODEL` | `nai-diffusion-4-5-full` | Modèle NovelAI utilisé (optionnel) |
+| `LOCAL_ENABLED` | `true` | `false` pour masquer le moteur local (optionnel) |
 
 3. Cliquer **Deploy**
 

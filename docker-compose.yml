@@ -24,6 +24,9 @@ version: "3.8"
 #   OAUTH_CLIENT_SECRET  : idem → Client Secret
 #   SESSION_SECRET       : openssl rand -hex 32
 #   ALLOWED_EMAIL        : ton adresse Gmail autorisée
+#   OPENAI_API_KEY       : (optionnel) active le moteur ChatGPT / OpenAI
+#   NOVELAI_API_KEY      : (optionnel) active le moteur NovelAI (Persistent API Token)
+#   DEFAULT_BACKEND      : (optionnel) local | openai | novelai
 #
 # Avant de déployer :
 #   sudo bash setup-vps.sh
@@ -73,6 +76,14 @@ services:
       - SESSION_SECRET=${SESSION_SECRET}
       - ALLOWED_EMAIL=${ALLOWED_EMAIL}
       - DOMAIN=${DOMAIN}
+      # Moteurs IA par API (optionnels — un moteur n'apparaît que si sa clé est définie)
+      - DEFAULT_BACKEND=${DEFAULT_BACKEND:-local}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_IMAGE_MODEL=${OPENAI_IMAGE_MODEL:-gpt-image-1}
+      - OPENAI_IMAGE_QUALITY=${OPENAI_IMAGE_QUALITY:-medium}
+      - NOVELAI_API_KEY=${NOVELAI_API_KEY:-}
+      - NOVELAI_MODEL=${NOVELAI_MODEL:-nai-diffusion-4-5-full}
+      - LOCAL_ENABLED=${LOCAL_ENABLED:-true}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.monoobd.rule=Host(`monoobd.${DOMAIN}`)"

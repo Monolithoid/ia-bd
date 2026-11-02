@@ -10,6 +10,7 @@ const sharp     = require('sharp');
 const fs        = require('fs');
 const path      = require('path');
 const crypto    = require('crypto');
+const backends  = require('./backends');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -20,11 +21,9 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-const INFERENCE_URL = process.env.INFERENCE_URL || 'http://inference:8000';
 const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL  || '';
 const DOMAIN        = process.env.DOMAIN         || 'localhost';
 const PORT          = 8080;
-const GEN_TIMEOUT   = 60 * 60 * 1000;
 const PROJECTS_DIR  = '/data/projects';
 const RENDERS_DIR   = '/data/renders';
 
@@ -127,20 +126,31 @@ app.get('/gallery', auth, (req, res) =>
 
 // ── API : statut serveur ─────────────────────────────────────────────────────────────────
 
-app.get('/api/status', async (_req, res) => {
+app.get('/api/status', async (req, res) => {
   try {
-    const r = await fetch(`${INFERENCE_URL}/health`,
-      { signal: AbortSignal.timeout(5000) });
-    res.json({ ready: r.ok });
-  } catch {
-    res.json({ ready: false });
+    const backend = backends.get(req.query.backend);
+    res.json({ ready: await backend.ready(), backend: backend.id });
+  } catch (e) {
+    res.json({ ready: false, error: e.message });
   }
+});
+
+// ── API : backends disponibles ─────────────────────────────────────────────────────────
+
+app.get('/api/backends', auth, (_req, res) => {
+  res.json({
+    default:  backends.defaultBackendId(),
+    backends: backends.available().map(b => ({ id: b.id, label: b.label })),
+  });
 });
 
 // ── API : infos session ─────────────────────────────────────────────────────────────────
 
 app.get('/api/session-info', auth, (req, res) => {
-  res.json({ lastRenderPrompt: req.session.lastRenderPrompt || '' });
+  res.json({
+    lastRenderPrompt: req.session.lastRenderPrompt || '',
+    lastBackend:      req.session.lastBackend      || '',
+  });
 });
 
 // ── API : projets ──────────────────────────────────────────────────────────────────────────
@@ -242,29 +252,10 @@ app.post('/api/projects/:pid/renders/:rid/relaunch', auth, async (req, res) => {
     const b64          = fs.readFileSync(originalFile).toString('base64');
     const renderPrompt = req.body.renderPrompt ?? render.renderPrompt;
     const type         = render.type;
+    const backendId    = req.body.backend || render.backend || backends.defaultBackendId();
 
-    const basePrompt = type === 'encrage'
-      ? 'manga line art, ligne claire style, Herge Tintin, black and white, '
-        + 'crisp clean bold outlines, no color, ink drawing, '
-        + 'professional Belgian comic book art, flat style'
-      : 'Belgian comic book, Tintin Herge style, ligne claire, '
-        + 'vibrant flat colors, bright primary colors, '
-        + 'clean coloring, no shadows, professional colored illustration';
-    const negPrompt = type === 'encrage'
-      ? 'color, blur, rough sketch, pencil marks, shading, '
-        + 'crosshatching, watermark, signature, low quality, noise, grain'
-      : 'black and white, monochrome, dark, heavy shadows, '
-        + 'photorealistic, blurry, watermark, signature, low quality';
-
-    const resultB64 = await generate({
-      image:              b64,
-      prompt:             buildPrompt(basePrompt, project.projectPrompt, renderPrompt),
-      negative_prompt:    negPrompt,
-      mode:               type,
-      steps:              20,
-      cfg_scale:          7,
-      denoising_strength: type === 'encrage' ? 0.7 : 0.5,
-    });
+    const resultB64 = await renderSketch(backendId, type, b64,
+      buildPrompt(STYLES[type].prompt, project.projectPrompt, renderPrompt));
 
     const newId = crypto.randomBytes(6).toString('hex');
     saveRenderFiles(newId, b64, resultB64);
@@ -272,6 +263,7 @@ app.post('/api/projects/:pid/renders/:rid/relaunch', auth, async (req, res) => {
     const newRender = {
       id:           newId,
       type,
+      backend:      backendId,
       timestamp:    new Date().toISOString(),
       renderPrompt,
       thumbnail:    await toThumbnail(resultB64),
@@ -308,15 +300,36 @@ async function toThumbnail(b64, maxDim = 200) {
   return 'data:image/png;base64,' + (await out.png().toBuffer()).toString('base64');
 }
 
-async function generate(payload) {
-  const r = await fetch(`${INFERENCE_URL}/generate`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
-    signal:  AbortSignal.timeout(GEN_TIMEOUT),
+// Prompts de style par mode (communs à tous les backends)
+const STYLES = {
+  encrage: {
+    prompt:   'manga line art, ligne claire style, Herge Tintin, black and white, '
+            + 'crisp clean bold outlines, no color, ink drawing, '
+            + 'professional Belgian comic book art, flat style',
+    negative: 'color, blur, rough sketch, pencil marks, shading, '
+            + 'crosshatching, watermark, signature, low quality, noise, grain',
+    strength: 0.7,
+  },
+  colorisation: {
+    prompt:   'Belgian comic book, Tintin Herge style, ligne claire, '
+            + 'vibrant flat colors, bright primary colors, '
+            + 'clean coloring, no shadows, professional colored illustration',
+    negative: 'black and white, monochrome, dark, heavy shadows, '
+            + 'photorealistic, blurry, watermark, signature, low quality',
+    strength: 0.5,
+  },
+};
+
+async function renderSketch(backendId, mode, image, prompt) {
+  const style = STYLES[mode];
+  if (!style) throw new Error(`mode invalide : ${mode}`);
+  return backends.get(backendId).generate({
+    image,
+    prompt,
+    negativePrompt: style.negative,
+    mode,
+    strength:       style.strength,
   });
-  if (!r.ok) throw new Error(`inference ${r.status}: ${await r.text()}`);
-  return (await r.json()).image;
 }
 
 function buildPrompt(base, projectPrompt, renderPrompt) {
@@ -328,85 +341,37 @@ function buildPrompt(base, projectPrompt, renderPrompt) {
 
 // ── API : rendu ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/encrage', auth, upload.single('file'), async (req, res) => {
-  try {
-    const { projectId, renderPrompt = '' } = req.body;
-    const project  = projectId ? loadProject(projectId) : null;
-    const b64      = await toB64(req.file.buffer);
-    const prompt   = buildPrompt(
-      'manga line art, ligne claire style, Herge Tintin, black and white, '
-      + 'crisp clean bold outlines, no color, ink drawing, '
-      + 'professional Belgian comic book art, flat style',
-      project ? project.projectPrompt : '',
-      renderPrompt,
-    );
-    const resultB64 = await generate({
-      image:              b64,
-      prompt,
-      negative_prompt:    'color, blur, rough sketch, pencil marks, shading, '
-                        + 'crosshatching, watermark, signature, low quality, noise, grain',
-      mode:               'encrage',
-      steps:              20,
-      cfg_scale:          7,
-      denoising_strength: 0.7,
-    });
-    if (project) {
-      const renderId = crypto.randomBytes(6).toString('hex');
-      saveRenderFiles(renderId, b64, resultB64);
-      project.renders.push({
-        id:        renderId,
-        type:      'encrage',
-        timestamp: new Date().toISOString(),
-        renderPrompt,
-        thumbnail: await toThumbnail(resultB64),
-        hasFiles:  true,
-      });
-      saveProject(project);
-    }
-    req.session.lastRenderPrompt = renderPrompt;
-    res.json({ image: resultB64 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/colorisation', auth, upload.single('file'), async (req, res) => {
-  try {
-    const { projectId, renderPrompt = '' } = req.body;
-    const project  = projectId ? loadProject(projectId) : null;
-    const b64      = await toB64(req.file.buffer);
-    const prompt   = buildPrompt(
-      'Belgian comic book, Tintin Herge style, ligne claire, '
-      + 'vibrant flat colors, bright primary colors, '
-      + 'clean coloring, no shadows, professional colored illustration',
-      project ? project.projectPrompt : '',
-      renderPrompt,
-    );
-    const resultB64 = await generate({
-      image:              b64,
-      prompt,
-      negative_prompt:    'black and white, monochrome, dark, heavy shadows, '
-                        + 'photorealistic, blurry, watermark, signature, low quality',
-      mode:               'colorisation',
-      steps:              20,
-      cfg_scale:          7,
-      denoising_strength: 0.5,
-    });
-    if (project) {
-      const renderId = crypto.randomBytes(6).toString('hex');
-      saveRenderFiles(renderId, b64, resultB64);
-      project.renders.push({
-        id:        renderId,
-        type:      'colorisation',
-        timestamp: new Date().toISOString(),
-        renderPrompt,
-        thumbnail: await toThumbnail(resultB64),
-        hasFiles:  true,
-      });
-      saveProject(project);
-    }
-    req.session.lastRenderPrompt = renderPrompt;
-    res.json({ image: resultB64 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+for (const mode of Object.keys(STYLES)) {
+  app.post(`/api/${mode}`, auth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Aucun fichier reçu' });
+      const { projectId, renderPrompt = '' } = req.body;
+      const backendId = backends.get(req.body.backend).id;
+      const project   = projectId ? loadProject(projectId) : null;
+      const b64       = await toB64(req.file.buffer);
+      const prompt    = buildPrompt(STYLES[mode].prompt,
+        project ? project.projectPrompt : '', renderPrompt);
+      const resultB64 = await renderSketch(backendId, mode, b64, prompt);
+      if (project) {
+        const renderId = crypto.randomBytes(6).toString('hex');
+        saveRenderFiles(renderId, b64, resultB64);
+        project.renders.push({
+          id:        renderId,
+          type:      mode,
+          backend:   backendId,
+          timestamp: new Date().toISOString(),
+          renderPrompt,
+          thumbnail: await toThumbnail(resultB64),
+          hasFiles:  true,
+        });
+        saveProject(project);
+      }
+      req.session.lastRenderPrompt = renderPrompt;
+      req.session.lastBackend      = backendId;
+      res.json({ image: resultB64, backend: backendId });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+}
 
 app.listen(PORT, '0.0.0.0', () => console.log(`MonooBD :${PORT}`));
 
@@ -459,6 +424,9 @@ header{background:#1e293b;padding:.875rem 1.5rem;display:flex;justify-content:sp
 input[type=file]{display:none}
 .fname{font-size:.875rem;color:#fdba74;margin-top:.5rem;font-weight:500}
 .actions{display:flex;gap:.75rem;margin-top:1.25rem;justify-content:center;flex-wrap:wrap}
+.backend-row{display:flex;gap:.5rem;align-items:center;justify-content:center;margin-top:1rem;font-size:.875rem;color:#94a3b8}
+.backend-row select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:.4rem .75rem;font-size:.875rem;max-width:100%}
+.backend-row select:focus{outline:none;border-color:#f97316}
 button{padding:.625rem 1.75rem;border:none;border-radius:8px;font-size:.9rem;
   cursor:pointer;font-weight:600;transition:opacity .15s,transform .1s}
 button:active{transform:scale(.97)}
@@ -556,6 +524,11 @@ button:disabled{opacity:.4;cursor:not-allowed}
     <div class="hint">Pr&eacute;-rempli avec le dernier prompt utilis&eacute;. Sera m&eacute;moris&eacute; pour le prochain rendu.</div>
   </div>
 
+  <div class="backend-row">
+    <label for="backendSel">Moteur IA</label>
+    <select id="backendSel" onchange="onBackendChange()"></select>
+  </div>
+
   <div class="actions">
     <button class="btn-ink" id="bInk" disabled onclick="run('encrage')">
       &#9998;&nbsp;Encrer (B&amp;W ligne claire)
@@ -607,6 +580,8 @@ var savedFlash   = document.getElementById('savedFlash');
 var warnNoProj   = document.getElementById('warnNoProj');
 var histDiv  = document.getElementById('history');
 var histGrid = document.getElementById('histGrid');
+var backendSel = document.getElementById('backendSel');
+var readyTimer = null;
 
 // Drag & drop
 dz.onclick = function(){ fi.click(); };
@@ -730,11 +705,14 @@ async function run(action){
   resTitle.textContent = action === 'encrage' ? 'Encrage ligne claire' : 'Colorisation';
   bInk.disabled = true; bCol.disabled = true;
   pv.classList.remove('show');
-  setStatus('Génération en cours… peut prendre 10–30 min sur CPU', 'loading');
+  setStatus(backendSel.value === 'local'
+    ? 'Génération en cours… peut prendre 10–30 min sur CPU'
+    : 'Génération en cours via ' + backendSel.options[backendSel.selectedIndex].text + '…', 'loading');
   try {
     var fd = new FormData();
     fd.append('file', file);
     fd.append('renderPrompt', renderPrompt.value);
+    fd.append('backend', backendSel.value);
     if(currentProjectId) fd.append('projectId', currentProjectId);
     var resp = await fetch('/api/' + action, { method: 'POST', body: fd });
     var data = await resp.json();
@@ -755,6 +733,25 @@ async function run(action){
   }
 }
 
+// ── Moteur IA ─────────────────────────────────────────────────────────────────────────
+
+function onBackendChange(){
+  setStatus('');
+  pollReady();
+}
+
+async function pollReady(){
+  clearTimeout(readyTimer);
+  var data = await fetch('/api/status?backend=' + encodeURIComponent(backendSel.value))
+    .then(function(r){ return r.json(); }).catch(function(){ return { ready: false }; });
+  if(!data.ready){
+    setStatus(data.error ? 'Moteur indisponible : ' + data.error : 'Serveur IA en cours de démarrage…');
+    readyTimer = setTimeout(pollReady, 10000);
+  } else if(st.className.indexOf('loading') < 0) {
+    setStatus('');
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────────────────────
 
 (async function init(){
@@ -763,15 +760,15 @@ async function run(action){
   var info = await fetch('/api/session-info').then(function(r){ return r.json(); }).catch(function(){ return {}; });
   if(info.lastRenderPrompt) renderPrompt.value = info.lastRenderPrompt;
 
-  (async function pollReady(){
-    var data = await fetch('/api/status').then(function(r){ return r.json(); }).catch(function(){ return { ready: false }; });
-    if(!data.ready){
-      setStatus('Serveur IA en cours de démarrage…');
-      setTimeout(pollReady, 10000);
-    } else {
-      setStatus('');
-    }
-  })();
+  var bk = await fetch('/api/backends').then(function(r){ return r.json(); }).catch(function(){ return { backends: [] }; });
+  (bk.backends || []).forEach(function(b){
+    var opt = document.createElement('option');
+    opt.value = b.id; opt.textContent = b.label;
+    backendSel.appendChild(opt);
+  });
+  var wanted = info.lastBackend || bk.default;
+  if(wanted && (bk.backends || []).some(function(b){ return b.id === wanted; })) backendSel.value = wanted;
+  pollReady();
 })();
 </script>
 </body>
@@ -943,6 +940,8 @@ header{background:#1e293b;padding:.875rem 1.5rem;display:flex;justify-content:sp
     <h3>&#9654; Relancer le rendu</h3>
     <label>Prompt (modifiable)</label>
     <textarea id="relaunchPrompt" rows="3"></textarea>
+    <label style="margin-top:.75rem;display:block">Moteur IA</label>
+    <select id="relaunchBackend" style="width:100%;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:.5rem .75rem;font-size:.875rem"></select>
     <div class="modal-status" id="relaunchStatus"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeRelaunch()">Annuler</button>
@@ -1042,38 +1041,39 @@ function renderGallery() {
 }
 
 function buildCard(projectId, render) {
-  var card = document.createElement(‘div’);
-  card.className = ‘render-card’;
+  var card = document.createElement('div');
+  card.className = 'render-card';
   card.dataset.renderId = render.id;
   card.dataset.projectId = projectId;
-  card.dataset.hasFiles = render.hasFiles ? ‘true’ : ‘false’;
+  card.dataset.hasFiles = render.hasFiles ? 'true' : 'false';
   card.draggable = true;
 
-  var imgSrc   = render.hasFiles ? ‘/api/renders/’ + render.id + ‘/result’ : (render.thumbnail || ‘’);
+  var imgSrc   = render.hasFiles ? '/api/renders/' + render.id + '/result' : (render.thumbnail || '');
   var hasFiles = !!render.hasFiles;
-  var caption  = esc(render.type + (render.renderPrompt ? ‘ — ‘ + render.renderPrompt.slice(0, 40) : ‘’));
+  var caption  = esc(render.type + (render.renderPrompt ? ' — ' + render.renderPrompt.slice(0, 40) : ''));
 
   card.innerHTML =
-    ‘<div class="drag-handle" title="Glisser pour réordonner">&#8597;</div>’
-    + ‘<div class="card-img-wrap">’
+    '<div class="drag-handle" title="Glisser pour réordonner">&#8597;</div>'
+    + '<div class="card-img-wrap">'
     +   (imgSrc
-          ? ‘<img src="’ + imgSrc + ‘" alt="Rendu" loading="lazy" onclick="openLightbox(\’’ + render.id + ‘\’,\’’ + caption + ‘\’)">’
-          : ‘<div class="no-img">Pas d’image disponible</div>’)
-    + ‘</div>’
-    + ‘<div class="card-footer">’
-    +   ‘<div class="card-meta">’
-    +     ‘<span class="badge ‘ + (render.type === ‘encrage’ ? ‘badge-enc’ : ‘badge-col’) + ‘">’ + render.type + ‘</span>’
-    +     (render.relaunchedFrom ? ‘<span class="badge badge-rel">relancé</span>’ : ‘’)
-    +     ‘<span class="card-date">’ + fmtDate(render.timestamp) + ‘</span>’
-    +   ‘</div>’
-    +   ‘<div class="card-prompt">’ + esc(render.renderPrompt || ‘—‘) + ‘</div>’
-    +   ‘<div class="card-actions">’
-    +     ‘<button class="ca ca-view" onclick="openLightbox(\’’ + render.id + ‘\’,\’’ + caption + ‘\’)" ‘ + (imgSrc ? ‘’ : ‘disabled’) + ‘>&#128065; Voir</button>’
-    +     ‘<button class="ca ca-cmp" onclick="openCompare(\’’ + render.id + ‘\’)" ‘ + (hasFiles ? ‘’ : ‘disabled title="Fichiers non disponibles (rendu ancien)"’) + ‘>&#9867; Comparer</button>’
-    +     ‘<button class="ca ca-relaunch" onclick="openRelaunch(\’’ + projectId + ‘\’,\’’ + render.id + ‘\’,\’’ + esc(render.renderPrompt || ‘’) + ‘\’)" ‘ + (hasFiles ? ‘’ : ‘disabled title="Croquis original non disponible (rendu ancien)"’) + ‘>&#9654; Relancer</button>’
-    +     ‘<button class="ca ca-del" onclick="deleteRender(\’’ + projectId + ‘\’,\’’ + render.id + ‘\’)">&#128465; Sup.</button>’
-    +   ‘</div>’
-    + ‘</div>’;
+          ? '<img src="' + imgSrc + '" alt="Rendu" loading="lazy" onclick="openLightbox(\\'' + render.id + '\\',\\'' + caption + '\\')">'
+          : '<div class="no-img">Pas d&rsquo;image disponible</div>')
+    + '</div>'
+    + '<div class="card-footer">'
+    +   '<div class="card-meta">'
+    +     '<span class="badge ' + (render.type === 'encrage' ? 'badge-enc' : 'badge-col') + '">' + render.type + '</span>'
+    +     (render.relaunchedFrom ? '<span class="badge badge-rel">relancé</span>' : '')
+    +     '<span class="badge badge-rel">' + esc(render.backend || 'local') + '</span>'
+    +     '<span class="card-date">' + fmtDate(render.timestamp) + '</span>'
+    +   '</div>'
+    +   '<div class="card-prompt">' + esc(render.renderPrompt || '—') + '</div>'
+    +   '<div class="card-actions">'
+    +     '<button class="ca ca-view" onclick="openLightbox(\\'' + render.id + '\\',\\'' + caption + '\\')" ' + (imgSrc ? '' : 'disabled') + '>&#128065; Voir</button>'
+    +     '<button class="ca ca-cmp" onclick="openCompare(\\'' + render.id + '\\')" ' + (hasFiles ? '' : 'disabled title="Fichiers non disponibles (rendu ancien)"') + '>&#9867; Comparer</button>'
+    +     '<button class="ca ca-relaunch" onclick="openRelaunch(\\'' + projectId + '\\',\\'' + render.id + '\\',\\'' + esc(render.renderPrompt || '') + '\\')" ' + (hasFiles ? '' : 'disabled title="Croquis original non disponible (rendu ancien)"') + '>&#9654; Relancer</button>'
+    +     '<button class="ca ca-del" onclick="deleteRender(\\'' + projectId + '\\',\\'' + render.id + '\\')">&#128465; Sup.</button>'
+    +   '</div>'
+    + '</div>';
 
   // Drag-and-drop
   card.addEventListener('dragstart', onDragStart);
@@ -1235,8 +1235,25 @@ async function deleteRender(projectId, renderId) {
 
 // ── Relaunch ────────────────────────────────────────────────────────────────────────────
 
-function openRelaunch(projectId, renderId, currentPrompt) {
+async function loadBackends() {
+  var sel = document.getElementById('relaunchBackend');
+  if (sel.options.length) return;
+  var bk = await fetch('/api/backends').then(function(r){ return r.json(); }).catch(function(){ return { backends: [] }; });
+  (bk.backends || []).forEach(function(b){
+    var opt = document.createElement('option');
+    opt.value = b.id; opt.textContent = b.label;
+    sel.appendChild(opt);
+  });
+}
+
+async function openRelaunch(projectId, renderId, currentPrompt) {
   relaunchTarget = { projectId: projectId, renderId: renderId };
+  await loadBackends();
+  var proj   = allProjects.find(function(p){ return p.id === projectId; });
+  var render = proj && (proj.renders || []).find(function(r){ return r.id === renderId; });
+  var sel    = document.getElementById('relaunchBackend');
+  var cur    = (render && render.backend) || 'local';
+  if ([].some.call(sel.options, function(o){ return o.value === cur; })) sel.value = cur;
   document.getElementById('relaunchPrompt').value = currentPrompt || '';
   document.getElementById('relaunchStatus').textContent = '';
   document.getElementById('relaunchConfirm').disabled = false;
@@ -1254,7 +1271,8 @@ async function confirmRelaunch() {
   var btn    = document.getElementById('relaunchConfirm');
   var status = document.getElementById('relaunchStatus');
   btn.disabled = true;
-  status.innerHTML = '<span class="spin"></span> Génération en cours… (10–30 min)';
+  status.innerHTML = '<span class="spin"></span> Génération en cours…'
+    + (document.getElementById('relaunchBackend').value === 'local' ? ' (10–30 min)' : '');
 
   try {
     var resp = await fetch(
@@ -1262,7 +1280,7 @@ async function confirmRelaunch() {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ renderPrompt: prompt }),
+        body: JSON.stringify({ renderPrompt: prompt, backend: document.getElementById('relaunchBackend').value }),
       }
     );
     var data = await resp.json();
