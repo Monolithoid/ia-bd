@@ -83,6 +83,7 @@ services:
       - OPENAI_IMAGE_QUALITY=${OPENAI_IMAGE_QUALITY:-medium}
       - NOVELAI_API_KEY=${NOVELAI_API_KEY:-}
       - NOVELAI_MODEL=${NOVELAI_MODEL:-nai-diffusion-4-5-full}
+      - NOVELAI_STRENGTH=${NOVELAI_STRENGTH:-}
       - LOCAL_ENABLED=${LOCAL_ENABLED:-true}
     labels:
       - "traefik.enable=true"

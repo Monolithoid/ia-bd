@@ -100,6 +100,7 @@ Crée `/opt/ia/bd/{models,outputs,sessions}` et configure UFW.
 | `OPENAI_IMAGE_QUALITY` | `medium` | `low`, `medium` ou `high` (optionnel, impacte le coût) |
 | `NOVELAI_API_KEY` | `pst-...` | Persistent API Token NovelAI, active le moteur NovelAI (optionnel) |
 | `NOVELAI_MODEL` | `nai-diffusion-4-5-full` | Modèle NovelAI utilisé (optionnel) |
+| `NOVELAI_STRENGTH` | `0.6` | Force img2img NovelAI, 0 à 1 : plus haut = plus de détails ajoutés, moins fidèle au croquis (optionnel) |
 | `LOCAL_ENABLED` | `true` | `false` pour masquer le moteur local (optionnel) |
 
 3. Cliquer **Deploy**
