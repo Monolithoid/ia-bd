@@ -15,7 +15,8 @@ ia-bd/
 │   ├── requirements.txt
 │   └── Dockerfile      # python:3.10-slim + PyTorch CPU
 ├── webapp/             # Interface web Node.js/Express
-│   ├── server.js       # Endpoints /api/encrage, /api/colorisation, /api/status
+│   ├── server.js       # Endpoints /api/encrage, /api/colorisation, /api/status, /api/backends
+│   ├── backends.js     # Moteurs IA : local, openai, novelai
 │   ├── package.json
 │   └── Dockerfile      # node:alpine
 ├── docker-compose.yml  # Stack complète (inference + webapp)
@@ -35,7 +36,9 @@ Le répertoire `a1111/` est obsolète (ancienne tentative de fix A1111) — peut
   - Cache HuggingFace dans `/models/hf-cache` (volume VPS `/opt/ia/bd/models`)
 
 - **webapp** (`monolithoid/bd-webapp`) : Node.js/Express, Google SSO, upload + prévisualisation
-  - Appelle `http://inference:8000/generate` via `INFERENCE_URL`
+  - Moteurs sélectionnables dans `webapp/backends.js` : `local` (appelle `http://inference:8000/generate` via `INFERENCE_URL`), `openai`, `novelai`
+  - Un moteur n'apparaît que si sa clé API est configurée ; `GET /api/backends` liste les moteurs disponibles
+  - Pas d'Ollama ni d'Open WebUI : les appels se font en direct depuis la webapp
 
 ## CI/CD
 
@@ -54,6 +57,10 @@ Le répertoire `a1111/` est obsolète (ancienne tentative de fix A1111) — peut
 | `SESSION_SECRET` | `openssl rand -hex 32` |
 | `ALLOWED_EMAIL` | Seule adresse Gmail autorisée |
 | `PRELOAD_MODES` | `encrage,colorisation` pour précharger au démarrage |
+| `DEFAULT_BACKEND` | Moteur par défaut : `local`, `openai`, `novelai` |
+| `OPENAI_API_KEY` / `OPENAI_IMAGE_MODEL` / `OPENAI_IMAGE_QUALITY` | Moteur ChatGPT (OpenAI Images API, `/v1/images/edits`) |
+| `NOVELAI_API_KEY` / `NOVELAI_MODEL` | Moteur NovelAI (img2img, réponse ZIP) |
+| `LOCAL_ENABLED` | `false` pour masquer le moteur local |
 
 ## VPS
 
