@@ -6,7 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # NumPy 1.x requis : torch 2.1.2 et diffusers 0.27.2 sont incompatibles avec NumPy 2.x
-RUN pip install --no-cache-dir "numpy<2"
+# Les dépendances pures-Python de torch/torchvision sont installées ici depuis PyPI :
+# l'index PyTorch ne les sert pas toujours en wheel (ex. typing_extensions 4.16 en sdist
+# seulement, dont le build exige flit_core, absent de cet index → échec du build).
+RUN pip install --no-cache-dir "numpy<2" \
+        typing-extensions filelock sympy networkx jinja2 fsspec requests "pillow==10.2.0"
 
 # PyTorch CPU (couche indépendante — mise en cache si version inchangée)
 RUN pip install --no-cache-dir \
