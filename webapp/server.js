@@ -255,7 +255,7 @@ app.post('/api/projects/:pid/renders/:rid/relaunch', auth, async (req, res) => {
     const backendId    = req.body.backend || render.backend || backends.defaultBackendId();
 
     const resultB64 = await renderSketch(backendId, type, b64,
-      buildPrompt(STYLES[type].prompt, project.projectPrompt, renderPrompt));
+      project.projectPrompt, renderPrompt);
 
     const newId = crypto.randomBytes(6).toString('hex');
     saveRenderFiles(newId, b64, resultB64);
@@ -309,6 +309,15 @@ const STYLES = {
     negative: 'color, blur, rough sketch, pencil marks, shading, '
             + 'crosshatching, watermark, signature, low quality, noise, grain',
     strength: 0.7,
+    // NovelAI (V4/V4.5) : prompt en tags, sans « flat / no shadows » qui
+    // simplifient fortement le rendu. qualityToggle ajoute déjà les tags qualité.
+    novelai: {
+      prompt:   'comic book page, detailed clean lineart, ink, monochrome, greyscale, '
+              + 'bold confident outlines, detailed background, intricate details, '
+              + 'professional comic art, ligne claire',
+      negative: 'color, sketch, rough lines, messy lines, pencil, blurry, lowres, '
+              + 'jpeg artifacts, watermark, signature, text, simple background',
+    },
   },
   colorisation: {
     prompt:   'Belgian comic book, Tintin Herge style, ligne claire, '
@@ -317,15 +326,37 @@ const STYLES = {
     negative: 'black and white, monochrome, dark, heavy shadows, '
             + 'photorealistic, blurry, watermark, signature, low quality',
     strength: 0.5,
+    novelai: {
+      prompt:   'comic book illustration, full color, detailed coloring, '
+              + 'rich vibrant colors, soft shading, lighting, detailed background, '
+              + 'intricate details, professional comic art, ligne claire',
+      negative: 'monochrome, greyscale, sketch, unfinished, flat color, blurry, lowres, '
+              + 'jpeg artifacts, watermark, signature, text, simple background',
+      strength: 0.6,
+    },
   },
 };
 
-async function renderSketch(backendId, mode, image, prompt) {
-  const style = STYLES[mode];
-  if (!style) throw new Error(`mode invalide : ${mode}`);
+// Style effectif pour un backend : surcharge éventuelle (ex. STYLES.encrage.novelai)
+function styleFor(mode, backendId) {
+  const base = STYLES[mode];
+  if (!base) throw new Error(`mode invalide : ${mode}`);
+  const style = { ...base, ...(base[backendId] || {}) };
+  const envStrength = parseFloat(process.env[`${backendId.toUpperCase()}_STRENGTH`] || '');
+  if (!Number.isNaN(envStrength)) style.strength = envStrength;
+  return style;
+}
+
+// Les API distantes acceptent des images plus grandes que le CPU local
+function maxInputDim(backendId) {
+  return backendId === 'local' ? 768 : 1536;
+}
+
+async function renderSketch(backendId, mode, image, projectPrompt, renderPrompt) {
+  const style = styleFor(mode, backendId);
   return backends.get(backendId).generate({
     image,
-    prompt,
+    prompt:         buildPrompt(style.prompt, projectPrompt, renderPrompt),
     negativePrompt: style.negative,
     mode,
     strength:       style.strength,
@@ -348,10 +379,9 @@ for (const mode of Object.keys(STYLES)) {
       const { projectId, renderPrompt = '' } = req.body;
       const backendId = backends.get(req.body.backend).id;
       const project   = projectId ? loadProject(projectId) : null;
-      const b64       = await toB64(req.file.buffer);
-      const prompt    = buildPrompt(STYLES[mode].prompt,
+      const b64       = await toB64(req.file.buffer, maxInputDim(backendId));
+      const resultB64 = await renderSketch(backendId, mode, b64,
         project ? project.projectPrompt : '', renderPrompt);
-      const resultB64 = await renderSketch(backendId, mode, b64, prompt);
       if (project) {
         const renderId = crypto.randomBytes(6).toString('hex');
         saveRenderFiles(renderId, b64, resultB64);

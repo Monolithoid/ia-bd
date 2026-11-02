@@ -59,7 +59,7 @@ Le répertoire `a1111/` est obsolète (ancienne tentative de fix A1111) — peut
 | `PRELOAD_MODES` | `encrage,colorisation` pour précharger au démarrage |
 | `DEFAULT_BACKEND` | Moteur par défaut : `local`, `openai`, `novelai` |
 | `OPENAI_API_KEY` / `OPENAI_IMAGE_MODEL` / `OPENAI_IMAGE_QUALITY` | Moteur ChatGPT (OpenAI Images API, `/v1/images/edits`) |
-| `NOVELAI_API_KEY` / `NOVELAI_MODEL` | Moteur NovelAI (img2img, réponse ZIP) |
+| `NOVELAI_API_KEY` / `NOVELAI_MODEL` / `NOVELAI_STRENGTH` | Moteur NovelAI (img2img, réponse ZIP) |
 | `LOCAL_ENABLED` | `false` pour masquer le moteur local |
 
 ## VPS

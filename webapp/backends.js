@@ -170,40 +170,67 @@ const novelai = {
     const resized = (await sharp(buf).resize(width, height, { fit: 'fill' }).png().toBuffer())
       .toString('base64');
 
-    const isV4 = /diffusion-4/.test(NOVELAI_MODEL);
+    const isV4  = /diffusion-4/.test(NOVELAI_MODEL);
+    const is45  = /diffusion-4-5/.test(NOVELAI_MODEL);
+    const seed  = Math.floor(Math.random() * 4294967295);
+    // Paramètres alignés sur ceux envoyés par novelai.net (params_version 3)
     const parameters = {
-      params_version: 3,
+      params_version:   3,
       width,
       height,
       scale:            5,
       sampler:          'k_euler_ancestral',
       steps:            NOVELAI_STEPS,
       n_samples:        1,
-      seed:             Math.floor(Math.random() * 4294967295),
-      strength,
-      noise:            0,
-      image:            resized,
+      seed,
+      ucPreset:         0,
+      qualityToggle:    true,
       negative_prompt:  negativePrompt,
       noise_schedule:   'karras',
-      qualityToggle:    true,
-      ucPreset:         0,
+      cfg_rescale:      0,
+      sm:               false,
+      sm_dyn:           false,
+      dynamic_thresholding:           false,
+      controlnet_strength:            1,
+      legacy:                         false,
+      legacy_uc:                      false,
+      legacy_v3_extend:               false,
+      add_original_image:             true,
+      prefer_brownian:                true,
+      deliberate_euler_ancestral_bug: false,
+      skip_cfg_above_sigma:           null,
+      use_coords:                     false,
+      characterPrompts:               [],
+      reference_image_multiple:                [],
+      reference_information_extracted_multiple: [],
+      reference_strength_multiple:             [],
+      normalize_reference_strength_multiple:   true,
+      // img2img
+      image:            resized,
+      strength,
+      noise:            0,
+      extra_noise_seed: seed,
     };
     if (isV4) {
       parameters.v4_prompt = {
-        caption:   { base_caption: prompt, char_captions: [] },
+        caption:    { base_caption: prompt, char_captions: [] },
         use_coords: false,
         use_order:  true,
       };
       parameters.v4_negative_prompt = {
-        caption: { base_caption: negativePrompt, char_captions: [] },
+        caption:   { base_caption: negativePrompt, char_captions: [] },
+        legacy_uc: false,
       };
     }
+    if (!is45) delete parameters.skip_cfg_above_sigma;
 
     const r = await fetch(NOVELAI_URL, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization:  `Bearer ${NOVELAI_API_KEY}`,
+        Origin:         'https://novelai.net',
+        Referer:        'https://novelai.net/',
       },
       body: JSON.stringify({ input: prompt, model: NOVELAI_MODEL, action: 'img2img', parameters }),
       signal: AbortSignal.timeout(GEN_TIMEOUT),
