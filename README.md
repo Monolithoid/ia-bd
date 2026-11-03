@@ -92,7 +92,7 @@ Crée `/opt/ia/bd/{models,outputs,sessions}` et configure UFW.
 | `OAUTH_CLIENT_ID` | `123…apps.googleusercontent.com` | Google OAuth |
 | `OAUTH_CLIENT_SECRET` | `GOCSPX-…` | Google OAuth |
 | `SESSION_SECRET` | *(openssl rand -hex 32)* | Clé de chiffrement des sessions |
-| `ALLOWED_EMAIL` | `toi@gmail.com` | Seule adresse Gmail autorisée |
+| `ALLOWED_EMAIL` | `toi@gmail.com` | Seule adresse Gmail autorisée (obligatoire : sans elle, toute connexion est refusée) |
 | `PRELOAD_MODES` | `encrage,colorisation` | Pipelines à charger au démarrage (optionnel) |
 | `DEFAULT_BACKEND` | `local` | Moteur IA par défaut : `local`, `openai` ou `novelai` (optionnel) |
 | `OPENAI_API_KEY` | `sk-...` | Active le moteur ChatGPT / OpenAI Images (optionnel) |

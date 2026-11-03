@@ -23,6 +23,7 @@ const upload = multer({
 
 const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL  || '';
 const DOMAIN        = process.env.DOMAIN         || 'localhost';
+if (!ALLOWED_EMAIL) console.warn('ALLOWED_EMAIL non défini : toutes les connexions seront refusées.');
 const PORT          = 8080;
 const PROJECTS_DIR  = '/data/projects';
 const RENDERS_DIR   = '/data/renders';
@@ -89,7 +90,9 @@ passport.use(new GoogleStrategy(
   },
   (_at, _rt, profile, done) => {
     const email = profile.emails?.[0]?.value ?? '';
-    if (ALLOWED_EMAIL && email !== ALLOWED_EMAIL) return done(null, false);
+    // Refus par défaut : sans ALLOWED_EMAIL, personne ne peut se connecter
+    // (sinon n'importe quel compte Google aurait accès et consommerait les clés API).
+    if (!ALLOWED_EMAIL || email !== ALLOWED_EMAIL) return done(null, false);
     done(null, { email, name: profile.displayName });
   },
 ));
